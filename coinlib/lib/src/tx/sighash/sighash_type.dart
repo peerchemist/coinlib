@@ -87,6 +87,13 @@ class SigHashType {
   /// Only the input receiving the signature shall be signed
   bool get anyOneCanPay => (value & anyOneCanPayFlag) != 0;
 
+  /// The signature can sign any previous output.
+  bool get anyPrevOut => (value & anyPrevOutFlag) != 0 || anyPrevOutAnyScript;
+
+  /// The signature can sign any previous output and any script.
+  bool get anyPrevOutAnyScript =>
+      (value & anyPrevOutAnyScriptFlag) == anyPrevOutAnyScriptFlag;
+
   @override
   bool operator ==(Object other) =>
       other is SigHashType && value == other.value;

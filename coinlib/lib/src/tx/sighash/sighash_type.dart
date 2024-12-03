@@ -4,8 +4,8 @@
 /// used.
 /// /// Supports SIGHASH_ANYPREVOUT and SIGHASH_ANYPREVOUTANYSCRIPT.
 class SigHashType {
-  /// Special value representing the default Schnorr behaviour to sign
-  /// everything. This is encoded as an absent byte.
+  /// Special value representing the default Schnorr behavior to sign everything.
+  /// This is encoded as an absent byte.
   static const schnorrDefaultValue = 0;
 
   /// Value to sign all outputs
@@ -17,8 +17,7 @@ class SigHashType {
   /// Value to sign the output at the same index as the input
   static const singleValue = 3;
 
-  /// Flag that can be combined with other hash type values to only sign the
-  /// input containing the signature
+  /// Flag that can be combined with other hash type values to sign only the input containing the signature
   static const anyOneCanPayFlag = 0x80;
 
   /// Flag for SIGHASH_ANYPREVOUT (APO)
@@ -27,72 +26,137 @@ class SigHashType {
   /// Flag for SIGHASH_ANYPREVOUTANYSCRIPT (APOAS)
   static const anyPrevOutAnyScriptFlag = 0xC0;
 
-  /// The single byte representation of the sighash type. Use [all], [none],
-  /// [single] and [anyOneCanPay] to extract details of the type.
+  /// Mask to extract the base hash type (bits 0-5)
+  static const baseMask = 0x3F;
+
+  /// The single-byte representation of the sighash type.
   final int value;
 
-  /// Returns true if the sighash type value is valid.
-  static bool validValue(int value) {
-    final valueMod = value & ~anyOneCanPayFlag;
-    return valueMod >= allValue && valueMod <= singleValue;
+  /// Private constructor to create an instance with a specific value.
+  const SigHashType._(this.value);
+
+  /// Factory constructors for base types
+  static SigHashType get schnorrDefault =>
+      const SigHashType._(schnorrDefaultValue);
+
+  static SigHashType get all => const SigHashType._(allValue);
+
+  static SigHashType get none => const SigHashType._(noneValue);
+
+  static SigHashType get single => const SigHashType._(singleValue);
+
+  /// Method to add ANYONECANPAY flag
+  SigHashType get anyOneCanPay {
+    _checkInvalidCombination(anyOneCanPayFlag);
+    return SigHashType._(value | anyOneCanPayFlag);
   }
 
-  /// Checks if the sighash value is valid and returns an [ArgumentError] if
-  /// not.
-  static void checkValue(int value) {
-    if (!validValue(value)) {
-      throw ArgumentError.value(value, "value", "not a valid hash type");
-    }
+  /// Method to add ANYPREVOUT flag
+  SigHashType get anyPrevOut {
+    _checkInvalidCombination(anyPrevOutFlag);
+    return SigHashType._(value | anyPrevOutFlag);
   }
 
-  /// Constructs from the byte representation of the sighash type.
-  SigHashType.fromValue(this.value) {
-    checkValue(value);
+  /// Method to add ANYPREVOUTANYSCRIPT flag
+  SigHashType get anyPrevOutAnyScript {
+    _checkInvalidCombination(anyPrevOutAnyScriptFlag);
+    return SigHashType._(value | anyPrevOutAnyScriptFlag);
   }
 
-  /// Functions as [SigHashType.all] but produces distinct signatures and is
-  /// only acceptable for Taproot Schnorr signatures.
-  const SigHashType.schnorrDefault() : value = schnorrDefaultValue;
-
-  /// Sign all of the outputs. If [anyOneCanPay] is true, then only the input
-  /// containing the signature will be signed.
-  /// If [anyOneCanPay] is false and a Taproot input is being signed, this will
-  /// be treated as "SIGHASH_DEFAULT".
-  const SigHashType.all({bool anyOneCanPay = false})
-      : value = allValue | (anyOneCanPay ? anyOneCanPayFlag : 0);
-
-  /// Sign no outputs. If [anyOneCanPay] is true, then only the input containing
-  /// the signature will be signed.
-  const SigHashType.none({bool anyOneCanPay = false})
-      : value = noneValue | (anyOneCanPay ? anyOneCanPayFlag : 0);
-
-  /// Sign the output at the same index as the input. If [anyOneCanPay] is true,
-  /// then only the input containing the signature will be signed.
-  const SigHashType.single({bool anyOneCanPay = false})
-      : value = singleValue | (anyOneCanPay ? anyOneCanPayFlag : 0);
+  /// Extracts the base type (ALL, NONE, SINGLE, or DEFAULT).
+  int get baseType => value & baseMask;
 
   /// If this is the default hash type for a Schnorr signature.
-  bool get schnorrDefault => value == schnorrDefaultValue;
+  bool get isSchnorrDefault => value == schnorrDefaultValue;
 
-  /// All outputs shall be signed
-  bool get all =>
-      value == schnorrDefaultValue || (value & ~anyOneCanPayFlag) == allValue;
+  /// All outputs shall be signed.
+  bool get isAll => baseType == allValue || isSchnorrDefault;
 
-  /// No outputs shall be signed
-  bool get none => (value & ~anyOneCanPayFlag) == noneValue;
+  /// No outputs shall be signed.
+  bool get isNone => baseType == noneValue;
 
-  /// Only the output with the same index as the input shall be signed
-  bool get single => (value & ~anyOneCanPayFlag) == singleValue;
+  /// Only the output with the same index as the input shall be signed.
+  bool get isSingle => baseType == singleValue;
 
-  /// Only the input receiving the signature shall be signed
-  bool get anyOneCanPay => (value & anyOneCanPayFlag) != 0;
+  /// The signature only signs the input containing it.
+  bool get isAnyOneCanPay => (value & anyOneCanPayFlag) != 0;
 
   /// The signature can sign any previous output.
-  bool get anyPrevOut => (value & anyPrevOutFlag) != 0 || anyPrevOutAnyScript;
+  bool get isAnyPrevOut =>
+      (value & (anyPrevOutFlag | anyPrevOutAnyScriptFlag)) == anyPrevOutFlag;
 
   /// The signature can sign any previous output and any script.
-  bool get anyPrevOutAnyScript =>
-      (value & anyPrevOutAnyScriptFlag) == anyPrevOutAnyScriptFlag;
+  bool get isAnyPrevOutAnyScript =>
+      (value & (anyPrevOutFlag | anyPrevOutAnyScriptFlag)) ==
+      anyPrevOutAnyScriptFlag;
+
+  /// Validates if the given value represents a valid SigHashType.
+  static bool validValue(int value) {
+    // Extract base type
+    final baseType = value & baseMask;
+
+    // Validate base type
+    if (baseType != schnorrDefaultValue &&
+        baseType != allValue &&
+        baseType != noneValue &&
+        baseType != singleValue) {
+      return false;
+    }
+
+    // Extract flags
+    final hasAnyOneCanPay = (value & anyOneCanPayFlag) != 0;
+    final hasAnyPrevOut = (value & anyPrevOutFlag) != 0;
+    final hasAnyPrevOutAnyScript =
+        (value & anyPrevOutAnyScriptFlag) == anyPrevOutAnyScriptFlag;
+
+    // Check for invalid flag combinations
+    final totalFlagsSet = [
+      hasAnyOneCanPay,
+      hasAnyPrevOut,
+      hasAnyPrevOutAnyScript,
+    ].where((flag) => flag).length;
+
+    if (totalFlagsSet > 1) {
+      // Cannot combine ANYONECANPAY with ANYPREVOUT or ANYPREVOUTANYSCRIPT
+      // Cannot combine ANYPREVOUT with ANYPREVOUTANYSCRIPT
+      return false;
+    }
+
+    // If all checks pass, the value is valid
+    return true;
+  }
+
+  /// Creates a SigHashType from an integer value after validating it.
+  factory SigHashType.fromValue(int value) {
+    if (!validValue(value)) {
+      throw ArgumentError.value(value, 'value', 'Not a valid sighash type');
+    }
+    return SigHashType._(value);
+  }
+
+  /// Checks for invalid flag combinations when adding a new flag.
+  void _checkInvalidCombination(int newFlag) {
+    // Check if the new flag is already set
+    if ((value & newFlag) != 0) {
+      throw StateError('Flag is already set');
+    }
+
+    // Check for invalid combinations
+    final isInvalidCombination =
+        // Cannot combine ANYONECANPAY with ANYPREVOUT or ANYPREVOUTANYSCRIPT
+        (newFlag == anyOneCanPayFlag &&
+                (isAnyPrevOut || isAnyPrevOutAnyScript)) ||
+            (isAnyOneCanPay &&
+                (newFlag == anyPrevOutFlag ||
+                    newFlag == anyPrevOutAnyScriptFlag)) ||
+            // Cannot combine ANYPREVOUT with ANYPREVOUTANYSCRIPT
+            (newFlag == anyPrevOutFlag && isAnyPrevOutAnyScript) ||
+            (isAnyPrevOut && newFlag == anyPrevOutAnyScriptFlag);
+
+    if (isInvalidCombination) {
+      throw StateError('Invalid flag combination');
+    }
+  }
 
   @override
   bool operator ==(Object other) =>
@@ -100,4 +164,18 @@ class SigHashType {
 
   @override
   int get hashCode => value;
+}
+
+void main() {
+  final sighashType = SigHashType.all.anyPrevOut;
+
+  print(
+    'Value: 0x${sighashType.value.toRadixString(16)}',
+  ); // Prints: Value: 0xc1
+
+  // Accessing properties
+  print('isAll: ${sighashType.isAll}'); // true
+  print('isAnyOneCanPay: ${sighashType.isAnyOneCanPay}'); // false
+  print('isAnyPrevOut: ${sighashType.isAnyPrevOut}'); // false
+  print('isAnyPrevOutAnyScript: ${sighashType.isAnyPrevOutAnyScript}'); // true
 }
